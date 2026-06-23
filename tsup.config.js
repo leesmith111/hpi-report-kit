@@ -13,6 +13,7 @@ export default defineConfig({
     aggregate: 'src/aggregate.js',
     canon: 'src/canon.js',
     format: 'src/format.js',
+    csdeck: 'src/csdeck.js',
     charts: 'src/charts.jsx',
     snapshot: 'src/snapshot.js',
     pptx: 'src/pptx.js',
