@@ -93,6 +93,7 @@ function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, exc
 function selectLeaseComps(subjects, comps, {
   bandPct = 35,
   months = 24,
+  radiusMi = 0,
   now = /* @__PURE__ */ new Date(),
   excludeIncomplete = true,
   canon = toCanonicalSubmarket
@@ -100,6 +101,9 @@ function selectLeaseComps(subjects, comps, {
   const subs = new Set(
     (subjects || []).map((s) => canon(s.submarket)).filter(Boolean)
   );
+  const subjPts = (subjects || []).map((s) => ({ lat: coord(s.latitude), lng: coord(s.longitude) })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  const radius = Number(radiusMi) || 0;
+  const useRadius = radius > 0 && subjPts.length > 0;
   const sfs = (subjects || []).map((s) => Number(s.total_sf) || 0).filter((n) => n > 0);
   const minSf = sfs.length ? Math.min(...sfs) : 0;
   const maxSf = sfs.length ? Math.max(...sfs) : 0;
@@ -111,9 +115,9 @@ function selectLeaseComps(subjects, comps, {
     cutoff = new Date(now);
     cutoff.setMonth(cutoff.getMonth() - Number(months));
   }
+  const inSubmarket = (c) => !subs.size || subs.has(canon(c.submarket));
   return (comps || []).filter((c) => {
     if (excludeIncomplete && c.incomplete === true) return false;
-    if (subs.size && !subs.has(canon(c.submarket))) return false;
     const sf = Number(c.leased_sf) || 0;
     if (sf <= 0 || sf < lo || sf > hi) return false;
     if (cutoff) {
@@ -123,7 +127,14 @@ function selectLeaseComps(subjects, comps, {
         if (!isNaN(d.getTime()) && d < cutoff) return false;
       }
     }
-    return true;
+    if (useRadius) {
+      const clat = coord(c.latitude), clng = coord(c.longitude);
+      if (Number.isFinite(clat) && Number.isFinite(clng)) {
+        return subjPts.some((p) => haversineMi(p.lat, p.lng, clat, clng) <= radius);
+      }
+      return inSubmarket(c);
+    }
+    return inSubmarket(c);
   }).sort((a, b) => recencyKey(b) - recencyKey(a));
 }
 function recencyKey(c) {

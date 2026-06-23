@@ -58,6 +58,17 @@ test('selectLeaseComps: size band + recency + submarket via default canon', () =
   assert.deepEqual(out.map(c => c.id), ['a']);
 });
 
+test('selectLeaseComps: radiusMi filters by proximity, crossing submarket labels', () => {
+  const now = new Date('2026-06-01T00:00:00Z')
+  const comps = [
+    { id: 'near', leased_sf: 95000, submarket: 'Other Submarket', latitude: 32.91, longitude: -97.31, comm_date: '2026-01-15' }, // near, different submarket → in (radius)
+    { id: 'far', leased_sf: 95000, submarket: 'Alliance', latitude: 33.9, longitude: -98.3, comm_date: '2026-01-15' },          // same submarket but far → out (radius)
+    { id: 'nocoord', leased_sf: 95000, submarket: 'Alliance', comm_date: '2026-01-15' },                                        // no coords → submarket fallback → in
+  ]
+  const out = selectLeaseComps([SUBJECT], comps, { bandPct: 35, months: 24, radiusMi: 5, now })
+  assert.deepEqual(out.map(c => c.id).sort(), ['near', 'nocoord'])
+})
+
 test('pickRepresentativeRate prefers the largest fitting quote + reports range', () => {
   const b = { id: 1, sf_available: 50000 };
   const rates = [
