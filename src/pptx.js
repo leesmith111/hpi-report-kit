@@ -68,7 +68,7 @@ export function addContentSlide(deck, title, { eyebrow, meta } = {}) {
     const metaW = 4.6;
     s.addText(title, { x: MARGIN, y: top, w: DECK_W - 2 * MARGIN - (meta ? metaW : 0), h: 0.5, fontSize: 18, bold: true, color: NAVY, fontFace: FONT });
     if (meta) {
-      s.addText(String(meta), { x: DECK_W - MARGIN - metaW, y: top + 0.04, w: metaW, h: 0.42, fontSize: 10, color: MUTED, align: 'right', valign: 'middle', fontFace: FONT });
+      s.addText(String(meta), { x: DECK_W - MARGIN - metaW, y: top + 0.04, w: metaW, h: 0.42, fontSize: 9.5, italic: true, color: FAINT, align: 'right', valign: 'middle', fontFace: FONT });
     }
     top += 0.52;
     s.addText('', { x: MARGIN, y: top, w: DECK_W - 2 * MARGIN, h: 0.014, fill: { color: BORDER }, line: { type: 'none' }, margin: 0 });
