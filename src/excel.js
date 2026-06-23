@@ -241,14 +241,19 @@ const matchesSubmarket = (r, submarket) =>
   !submarket || [r.submarket, r.micro_market].some((s) => String(s || '').toLowerCase().trim() === submarket.toLowerCase().trim());
 const byNewest = (a, b) => String(b.sign_date || '').localeCompare(String(a.sign_date || ''));
 
-// Append FTW market sheets (Lease Comps + YTD Leasing Activity).
-export function addMarketSheets(wb, { leaseComps = [], leasing = [], submarket = '', limit = 200 } = {}) {
-  const lc = leaseComps.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
+// Append FTW market sheets. `includeLeaseComps:false` skips the broad lease-comps
+// dump (callers that prefer the curated per-property competitive comps instead).
+export function addMarketSheets(wb, { leaseComps = [], leasing = [], submarket = '', limit = 200, includeLeaseComps = true } = {}) {
   const la = leasing.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
   const scope = submarket ? ` — ${submarket}` : '';
-  addTableSheet(wb, 'Lease Comps', `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow), { numFmts: LEASE_COMP_FMTS });
+  let leaseCompCount = 0;
+  if (includeLeaseComps) {
+    const lc = leaseComps.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
+    addTableSheet(wb, 'Lease Comps', `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow), { numFmts: LEASE_COMP_FMTS });
+    leaseCompCount = lc.length;
+  }
   addTableSheet(wb, 'YTD Leasing Activity', `FTW Leasing Activity${scope}`, LEASING_COLS, la.map(leasingRow), { numFmts: LEASING_FMTS });
-  return { leaseCompCount: lc.length, leasingCount: la.length };
+  return { leaseCompCount, leasingCount: la.length };
 }
 
 // ───────────────────────── Competitive-set sheets ──
@@ -279,11 +284,25 @@ export function addCompetitiveSetSheets(wb, cs, { label = '' } = {}) {
   const scope = label ? ` — ${label}` : (cs.submarket ? ` — ${cs.submarket}` : '');
   addTableSheet(wb, 'Competitive Set', `Competing Supply${scope}`, SUPPLY_COLS, [...subjectRows, ...compRows], { numFmts: SUPPLY_FMTS });
 
-  const comps = [...(cs.comps || [])]
-    .sort((a, b) => new Date(b.comm_date || b.sign_date || 0) - new Date(a.comm_date || a.sign_date || 0))
-    .map((c) => [c.tenant || '', c.owner || '', c.building_name || c.address || '', sub(c), num(c.leased_sf), num(c.start_rate), xlDate(c.comm_date), num(c.term)]);
-  addTableSheet(wb, 'Comparable Comps', `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps, { numFmts: CS_COMP_FMTS });
-  return { supplyCount: subjectRows.length + compRows.length, compCount: comps.length };
+  const compRow = (c) => [c.tenant || '', c.owner || '', c.building_name || c.address || '', sub(c), num(c.leased_sf), num(c.start_rate), xlDate(c.comm_date), num(c.term)];
+  const byRecency = (a, b) => new Date(b.comm_date || b.sign_date || 0) - new Date(a.comm_date || a.sign_date || 0);
+  let compCount = 0;
+  // Comparable lease comps — ONE sheet PER subject building when compsBySubject is
+  // provided (the curated ~20/property list), else a single combined sheet.
+  if (cs.compsBySubject && Object.keys(cs.compsBySubject).length) {
+    for (const s of (cs.subjects || [])) {
+      const listed = (cs.compsBySubject[s.id] || []).slice().sort(byRecency);
+      if (!listed.length) continue;
+      const name = s.building_name || s.address || 'Subject';
+      addTableSheet(wb, `Comps ${name}`, `Comparable Lease Comps — ${name}`, CS_COMP_COLS, listed.map(compRow), { numFmts: CS_COMP_FMTS });
+      compCount += listed.length;
+    }
+  } else {
+    const comps = [...(cs.comps || [])].sort(byRecency).map(compRow);
+    addTableSheet(wb, 'Comparable Lease Comps', `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps, { numFmts: CS_COMP_FMTS });
+    compCount = comps.length;
+  }
+  return { supplyCount: subjectRows.length + compRows.length, compCount };
 }
 
 export async function reportBuffer(input) {

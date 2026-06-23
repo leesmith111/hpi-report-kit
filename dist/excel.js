@@ -271,13 +271,17 @@ var leasingRow = (r) => [
 ];
 var matchesSubmarket = (r, submarket) => !submarket || [r.submarket, r.micro_market].some((s) => String(s || "").toLowerCase().trim() === submarket.toLowerCase().trim());
 var byNewest = (a, b) => String(b.sign_date || "").localeCompare(String(a.sign_date || ""));
-function addMarketSheets(wb, { leaseComps = [], leasing = [], submarket = "", limit = 200 } = {}) {
-  const lc = leaseComps.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
+function addMarketSheets(wb, { leaseComps = [], leasing = [], submarket = "", limit = 200, includeLeaseComps = true } = {}) {
   const la = leasing.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
   const scope = submarket ? ` \u2014 ${submarket}` : "";
-  addTableSheet(wb, "Lease Comps", `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow), { numFmts: LEASE_COMP_FMTS });
+  let leaseCompCount = 0;
+  if (includeLeaseComps) {
+    const lc = leaseComps.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
+    addTableSheet(wb, "Lease Comps", `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow), { numFmts: LEASE_COMP_FMTS });
+    leaseCompCount = lc.length;
+  }
   addTableSheet(wb, "YTD Leasing Activity", `FTW Leasing Activity${scope}`, LEASING_COLS, la.map(leasingRow), { numFmts: LEASING_FMTS });
-  return { leaseCompCount: lc.length, leasingCount: la.length };
+  return { leaseCompCount, leasingCount: la.length };
 }
 var rateCell = (n) => n != null && Number.isFinite(Number(n)) ? Number(n) : "";
 var SUPPLY_COLS = ["Building", "Submarket", "Total SF", "Available SF", "Status", "Gen / Delivery", "Asking $/SF", "Owner"];
@@ -305,9 +309,23 @@ function addCompetitiveSetSheets(wb, cs, { label = "" } = {}) {
   const compRows = [...cs.competitors || []].sort((a, b) => rank(a.status) - rank(b.status) || (Number(b.total_sf) || 0) - (Number(a.total_sf) || 0)).map((b) => supplyRowXl(cs, b, false));
   const scope = label ? ` \u2014 ${label}` : cs.submarket ? ` \u2014 ${cs.submarket}` : "";
   addTableSheet(wb, "Competitive Set", `Competing Supply${scope}`, SUPPLY_COLS, [...subjectRows, ...compRows], { numFmts: SUPPLY_FMTS });
-  const comps = [...cs.comps || []].sort((a, b) => new Date(b.comm_date || b.sign_date || 0) - new Date(a.comm_date || a.sign_date || 0)).map((c) => [c.tenant || "", c.owner || "", c.building_name || c.address || "", sub(c), num(c.leased_sf), num(c.start_rate), xlDate(c.comm_date), num(c.term)]);
-  addTableSheet(wb, "Comparable Comps", `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps, { numFmts: CS_COMP_FMTS });
-  return { supplyCount: subjectRows.length + compRows.length, compCount: comps.length };
+  const compRow = (c) => [c.tenant || "", c.owner || "", c.building_name || c.address || "", sub(c), num(c.leased_sf), num(c.start_rate), xlDate(c.comm_date), num(c.term)];
+  const byRecency = (a, b) => new Date(b.comm_date || b.sign_date || 0) - new Date(a.comm_date || a.sign_date || 0);
+  let compCount = 0;
+  if (cs.compsBySubject && Object.keys(cs.compsBySubject).length) {
+    for (const s of cs.subjects || []) {
+      const listed = (cs.compsBySubject[s.id] || []).slice().sort(byRecency);
+      if (!listed.length) continue;
+      const name = s.building_name || s.address || "Subject";
+      addTableSheet(wb, `Comps ${name}`, `Comparable Lease Comps \u2014 ${name}`, CS_COMP_COLS, listed.map(compRow), { numFmts: CS_COMP_FMTS });
+      compCount += listed.length;
+    }
+  } else {
+    const comps = [...cs.comps || []].sort(byRecency).map(compRow);
+    addTableSheet(wb, "Comparable Lease Comps", `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps, { numFmts: CS_COMP_FMTS });
+    compCount = comps.length;
+  }
+  return { supplyCount: subjectRows.length + compRows.length, compCount };
 }
 async function reportBuffer(input) {
   return buildMarketingReport(input).xlsx.writeBuffer();
