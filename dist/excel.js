@@ -14,8 +14,49 @@ function fmtSf(n) {
 
 // src/excel.js
 var NAVY = "FF1F2A4D";
-var LIGHT = "FFEDEFF5";
+var HEADER = "FF24315A";
+var BAND = "FFF3F6FB";
+var LABEL_BG = "FFEDEFF5";
+var BORDER = "FFD7DEEA";
 var WHITE = "FFFFFFFF";
+var thin = { style: "thin", color: { argb: BORDER } };
+var allBorders = { top: thin, left: thin, bottom: thin, right: thin };
+function styleHeaderCells(row, nCols) {
+  for (let c = 1; c <= nCols; c++) {
+    const cell = row.getCell(c);
+    cell.font = { bold: true, color: { argb: WHITE }, size: 10 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER } };
+    cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    cell.border = allBorders;
+  }
+  row.height = 22;
+}
+function styleDataRange(ws, firstRow, lastRow, nCols, numFmts = {}) {
+  for (let r = firstRow; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    const band = (r - firstRow) % 2 === 1;
+    for (let c = 1; c <= nCols; c++) {
+      const cell = row.getCell(c);
+      cell.border = allBorders;
+      cell.alignment = { vertical: "middle", horizontal: numFmts[c] ? "right" : "left" };
+      if (band) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND } };
+      if (numFmts[c]) cell.numFmt = numFmts[c];
+    }
+  }
+}
+function autoWidths(ws, columns, rows, numFmts = {}) {
+  columns.forEach((label, i) => {
+    let w = String(label ?? "").length;
+    for (const r of rows) {
+      const v = Array.isArray(r) ? r[i] : r[i];
+      const s = v == null ? "" : String(v);
+      if (s.length > w) w = s.length;
+    }
+    const pad = numFmts[i + 1] ? 5 : 3;
+    ws.getColumn(i + 1).width = Math.min(44, Math.max(11, w + pad));
+  });
+}
+var CP35_NCOL = 10;
 var CP35_SECTIONS = [
   {
     key: "proposals_out",
@@ -43,20 +84,6 @@ var CP35_SECTIONS = [
     columns: ["Tenant Name", "Date", "Sq. Ft.", "Rate/SF", "Quoted Rate/SF", "TI's/SF", "Term", "CoBroker", "Targeted Commencement", "Comments"]
   }
 ];
-function styleSectionHeader(row) {
-  row.eachCell({ includeEmpty: true }, (c) => {
-    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
-    c.font = { bold: true, color: { argb: WHITE } };
-  });
-  row.height = 18;
-}
-function styleColumnHeader(row) {
-  row.eachCell((c) => {
-    c.font = { bold: true, color: { argb: NAVY } };
-    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT } };
-    c.border = { bottom: { style: "thin", color: { argb: NAVY } } };
-  });
-}
 function safeSheetName(wb, raw) {
   const base = (String(raw || "Building").replace(/[\\/?*[\]:]/g, " ").trim() || "Building").slice(0, 28);
   let name = base, i = 2;
@@ -65,30 +92,58 @@ function safeSheetName(wb, raw) {
 }
 function addMarketingReportSheet(wb, { property = {}, sections = [] } = {}, name = "Marketing Report") {
   const ws = wb.addWorksheet(safeSheetName(wb, name), { views: [{ showGridLines: false }] });
-  ws.columns = [{ width: 26 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 10 }, { width: 24 }, { width: 18 }, { width: 40 }];
-  const kv = (label, value) => {
+  ws.columns = [{ width: 28 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 13 }, { width: 9 }, { width: 24 }, { width: 20 }, { width: 42 }];
+  const kv = (label, value, fmt) => {
     const r = ws.addRow([label, value]);
-    r.getCell(1).font = { bold: true };
+    const l = r.getCell(1), v = r.getCell(2);
+    l.font = { bold: true, color: { argb: NAVY } };
+    l.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LABEL_BG } };
+    l.border = allBorders;
+    v.border = allBorders;
+    if (fmt) {
+      v.numFmt = fmt;
+      v.alignment = { horizontal: "right" };
+    }
     return r;
   };
   kv("Ownership:", property.ownership || "");
   kv("Building:", property.building || "");
   kv("Date:", property.date || "");
   ws.addRow([]);
-  const psf = kv("     Property S.F.:", property.property_sf ?? "");
-  const vac = kv("     Vacant S.F.:", property.vacant_sf ?? "");
-  const pctVac = kv("     % Vacant:", { formula: `IFERROR(B${vac.number}/B${psf.number},0)` });
-  pctVac.getCell(2).numFmt = "0%";
-  kv("     % Occupied:", { formula: `1-B${pctVac.number}` }).getCell(2).numFmt = "0%";
+  const psf = kv("Property S.F.:", property.property_sf ?? "", "#,##0");
+  const vac = kv("Vacant S.F.:", property.vacant_sf ?? "", "#,##0");
+  const pctVac = kv("% Vacant:", { formula: `IFERROR(B${vac.number}/B${psf.number},0)` }, "0.0%");
+  kv("% Occupied:", { formula: `1-B${pctVac.number}` }, "0.0%");
   const byKey = Object.fromEntries(sections.map((s) => [s.key, s]));
   for (const def of CP35_SECTIONS) {
     ws.addRow([]);
-    styleSectionHeader(ws.addRow([def.title]));
-    styleColumnHeader(ws.addRow(def.columns));
+    const sh = ws.addRow([def.title]);
+    ws.mergeCells(sh.number, 1, sh.number, CP35_NCOL);
+    for (let c = 1; c <= CP35_NCOL; c++) {
+      const cell = sh.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+      cell.font = { bold: true, color: { argb: WHITE }, size: 11 };
+      cell.border = allBorders;
+    }
+    sh.height = 20;
+    const ch = ws.addRow(def.columns);
+    for (let c = 1; c <= CP35_NCOL; c++) {
+      const cell = ch.getCell(c);
+      cell.font = { bold: true, color: { argb: NAVY }, size: 9 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND } };
+      cell.alignment = { vertical: "middle", wrapText: true };
+      cell.border = allBorders;
+    }
+    ch.height = 26;
     const rows = byKey[def.key]?.rows || [];
-    for (const r of rows) {
-      const arr = Array.isArray(r) ? r : def.columns.map((_, i) => r[i] ?? "");
-      ws.addRow(arr);
+    const firstData = ch.number + 1;
+    if (rows.length) {
+      for (const r of rows) ws.addRow(Array.isArray(r) ? r : def.columns.map((_, i) => r[i] ?? ""));
+      styleDataRange(ws, firstData, ws.rowCount, CP35_NCOL, { 3: "#,##0" });
+    } else {
+      const er = ws.addRow(["(none)"]);
+      er.getCell(1).font = { italic: true, color: { argb: "FF94A3B8" } };
+      er.getCell(1).border = allBorders;
     }
   }
   return ws;
@@ -106,50 +161,71 @@ var numOr0 = (v) => {
 function buildCombinedReport({ project = {}, buildings = [] } = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Agency Hub";
-  const ws = wb.addWorksheet("Portfolio Summary", { views: [{ showGridLines: false }] });
-  ws.columns = [{ width: 28 }, { width: 22 }, { width: 13 }, { width: 13 }, { width: 11 }, { width: 14 }, { width: 9 }, { width: 11 }];
-  const title = ws.addRow([`${project.name || "Portfolio"} \u2014 Marketing Report`]);
-  ws.mergeCells(1, 1, 1, 8);
-  title.getCell(1).font = { bold: true, size: 14, color: { argb: NAVY } };
-  ws.addRow([`${buildings.length} building${buildings.length === 1 ? "" : "s"}`]);
-  ws.addRow([]);
-  const cols = ["Building", "Project", "Total SF", "Vacant SF", "% Vacant", "Proposals Out", "Tours", "Prospects"];
-  styleColumnHeader(ws.addRow(cols));
   const sorted = [...buildings].sort((a, b) => {
     const pa = a.property?.project || "", pb = b.property?.project || "";
     return (pa === "" ? 1 : 0) - (pb === "" ? 1 : 0) || pa.localeCompare(pb);
   });
-  let tSf = 0, tVac = 0, tProp = 0, tTour = 0, tPros = 0;
-  for (const b of sorted) {
-    const p = b.property || {}, byKey = Object.fromEntries((b.sections || []).map((s) => [s.key, (s.rows || []).length]));
-    const sf = numOr0(p.property_sf), vac = numOr0(p.vacant_sf);
-    const r = ws.addRow([p.building || "", p.project || "", sf || "", vac || "", sf ? vac / sf : "", byKey.proposals_out || 0, byKey.tours || 0, byKey.prospects || 0]);
-    r.getCell(5).numFmt = "0%";
-    tSf += sf;
-    tVac += vac;
-    tProp += byKey.proposals_out || 0;
-    tTour += byKey.tours || 0;
-    tPros += byKey.prospects || 0;
+  if (buildings.length > 1) {
+    const ws = wb.addWorksheet("Portfolio Summary", { views: [{ showGridLines: false }] });
+    const title = ws.addRow([`${project.name || "Portfolio"} \u2014 Marketing Report`]);
+    ws.mergeCells(1, 1, 1, 8);
+    title.getCell(1).font = { bold: true, size: 14, color: { argb: NAVY } };
+    title.height = 24;
+    const sub2 = ws.addRow([`${buildings.length} buildings`]);
+    sub2.getCell(1).font = { italic: true, color: { argb: "FF64748B" } };
+    ws.addRow([]);
+    const cols = ["Building", "Project", "Total SF", "Vacant SF", "% Vacant", "Proposals Out", "Tours", "Prospects"];
+    const headerRow = ws.addRow(cols);
+    styleHeaderCells(headerRow, cols.length);
+    const firstData = headerRow.number + 1;
+    let tSf = 0, tVac = 0, tProp = 0, tTour = 0, tPros = 0;
+    for (const b of sorted) {
+      const p = b.property || {}, byKey = Object.fromEntries((b.sections || []).map((s) => [s.key, (s.rows || []).length]));
+      const sf = numOr0(p.property_sf), vac = numOr0(p.vacant_sf);
+      ws.addRow([p.building || "", p.project || "", sf || "", vac || "", sf ? vac / sf : "", byKey.proposals_out || 0, byKey.tours || 0, byKey.prospects || 0]);
+      tSf += sf;
+      tVac += vac;
+      tProp += byKey.proposals_out || 0;
+      tTour += byKey.tours || 0;
+      tPros += byKey.prospects || 0;
+    }
+    const lastData = ws.rowCount;
+    styleDataRange(ws, firstData, lastData, cols.length, { 3: "#,##0", 4: "#,##0", 5: "0.0%", 6: "#,##0", 7: "#,##0", 8: "#,##0" });
+    const totals = ws.addRow(["TOTAL", "", tSf || "", tVac || "", tSf ? tVac / tSf : "", tProp, tTour, tPros]);
+    totals.eachCell((c, n) => {
+      c.font = { bold: true, color: { argb: NAVY } };
+      c.border = { top: { style: "medium", color: { argb: NAVY } }, bottom: thin, left: thin, right: thin };
+      if ([3, 4, 6, 7, 8].includes(n)) {
+        c.numFmt = "#,##0";
+        c.alignment = { horizontal: "right" };
+      }
+      if (n === 5) {
+        c.numFmt = "0.0%";
+        c.alignment = { horizontal: "right" };
+      }
+    });
+    autoWidths(ws, cols, sorted.map((b) => [b.property?.building, b.property?.project]), { 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1 });
+    ws.views = [{ state: "frozen", ySplit: headerRow.number, showGridLines: false }];
+    ws.autoFilter = { from: { row: headerRow.number, column: 1 }, to: { row: headerRow.number, column: cols.length } };
   }
-  const totals = ws.addRow(["TOTAL", "", tSf || "", tVac || "", tSf ? tVac / tSf : "", tProp, tTour, tPros]);
-  totals.eachCell((c) => {
-    c.font = { bold: true };
-    c.border = { top: { style: "thin", color: { argb: NAVY } } };
-  });
-  totals.getCell(5).numFmt = "0%";
   for (const b of sorted) addMarketingReportSheet(wb, b, b.property?.building || "Building");
   return wb;
 }
-function addTableSheet(wb, name, title, columns, rows = []) {
+function addTableSheet(wb, name, title, columns, rows = [], { numFmts = {} } = {}) {
   const ws = wb.addWorksheet(safeSheetName(wb, name), { views: [{ showGridLines: false }] });
   const titleRow = ws.addRow([title]);
   ws.mergeCells(1, 1, 1, columns.length);
   titleRow.getCell(1).font = { bold: true, size: 13, color: { argb: NAVY } };
-  styleColumnHeader(ws.addRow(columns));
+  titleRow.height = 22;
+  ws.addRow([]);
+  const headerRow = ws.addRow(columns);
+  styleHeaderCells(headerRow, columns.length);
+  const firstData = headerRow.number + 1;
   for (const r of rows) ws.addRow(Array.isArray(r) ? r : columns.map((_, i) => r[i] ?? ""));
-  ws.columns.forEach((c) => {
-    if (!c.width) c.width = 16;
-  });
+  styleDataRange(ws, firstData, ws.rowCount, columns.length, numFmts);
+  autoWidths(ws, columns, rows, numFmts);
+  ws.views = [{ state: "frozen", ySplit: headerRow.number, showGridLines: false }];
+  ws.autoFilter = { from: { row: headerRow.number, column: 1 }, to: { row: headerRow.number, column: columns.length } };
   return ws;
 }
 var num = (v) => {
@@ -163,6 +239,7 @@ var xlDate = (v) => {
 };
 var sub = (r) => r.submarket || r.micro_market || "";
 var LEASE_COMP_COLS = ["Building", "Submarket", "Tenant", "SF Leased", "Start Rate/SF", "Structure", "Sign Date", "Comm Date", "Term (mo)", "TI/SF", "Escalation", "Owner"];
+var LEASE_COMP_FMTS = { 4: "#,##0", 5: "$#,##0.00", 9: "#,##0", 10: "$#,##0.00" };
 var leaseCompRow = (r) => [
   r.building_name || "",
   sub(r),
@@ -178,6 +255,7 @@ var leaseCompRow = (r) => [
   r.owner || ""
 ];
 var LEASING_COLS = ["Building", "Submarket", "Tenant", "SF", "Rate/SF", "Type", "Sign Date", "Comm Date", "Term (mo)", "TI/SF", "Owner"];
+var LEASING_FMTS = { 4: "#,##0", 5: "$#,##0.00", 9: "#,##0", 10: "$#,##0.00" };
 var leasingRow = (r) => [
   r.building_name || "",
   sub(r),
@@ -197,12 +275,13 @@ function addMarketSheets(wb, { leaseComps = [], leasing = [], submarket = "", li
   const lc = leaseComps.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
   const la = leasing.filter((r) => matchesSubmarket(r, submarket)).sort(byNewest).slice(0, limit);
   const scope = submarket ? ` \u2014 ${submarket}` : "";
-  addTableSheet(wb, "Lease Comps", `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow));
-  addTableSheet(wb, "YTD Leasing Activity", `FTW Leasing Activity${scope}`, LEASING_COLS, la.map(leasingRow));
+  addTableSheet(wb, "Lease Comps", `FTW Lease Comps${scope}`, LEASE_COMP_COLS, lc.map(leaseCompRow), { numFmts: LEASE_COMP_FMTS });
+  addTableSheet(wb, "YTD Leasing Activity", `FTW Leasing Activity${scope}`, LEASING_COLS, la.map(leasingRow), { numFmts: LEASING_FMTS });
   return { leaseCompCount: lc.length, leasingCount: la.length };
 }
 var rateCell = (n) => n != null && Number.isFinite(Number(n)) ? Number(n) : "";
 var SUPPLY_COLS = ["Building", "Submarket", "Total SF", "Available SF", "Status", "Gen / Delivery", "Asking $/SF", "Owner"];
+var SUPPLY_FMTS = { 3: "#,##0", 4: "#,##0", 7: "$#,##0.00" };
 function supplyRowXl(cs, b, mark) {
   const gen = b.status === "Existing" ? (Number(b.sf_available) || 0) > 0 && (b.vacancy_type === "1st GEN" || b.vacancy_type === "2nd GEN") ? b.vacancy_type : "" : b.quarter_delivered ? `${b.quarter_delivered} (exp.)` : "";
   return [
@@ -217,6 +296,7 @@ function supplyRowXl(cs, b, mark) {
   ];
 }
 var CS_COMP_COLS = ["Tenant", "Landlord", "Building", "Submarket", "SF", "Start Rate/SF", "Comm Date", "Term (mo)"];
+var CS_COMP_FMTS = { 5: "#,##0", 6: "$#,##0.00", 8: "#,##0" };
 function addCompetitiveSetSheets(wb, cs, { label = "" } = {}) {
   if (!cs) return { supplyCount: 0, compCount: 0 };
   const STATUS_RANK = { "Existing": 0, "Under Construction": 1, "Proposed": 2 };
@@ -224,9 +304,9 @@ function addCompetitiveSetSheets(wb, cs, { label = "" } = {}) {
   const subjectRows = (cs.subjects || []).map((b) => supplyRowXl(cs, b, true));
   const compRows = [...cs.competitors || []].sort((a, b) => rank(a.status) - rank(b.status) || (Number(b.total_sf) || 0) - (Number(a.total_sf) || 0)).map((b) => supplyRowXl(cs, b, false));
   const scope = label ? ` \u2014 ${label}` : cs.submarket ? ` \u2014 ${cs.submarket}` : "";
-  addTableSheet(wb, "Competitive Set", `Competing Supply${scope}`, SUPPLY_COLS, [...subjectRows, ...compRows]);
+  addTableSheet(wb, "Competitive Set", `Competing Supply${scope}`, SUPPLY_COLS, [...subjectRows, ...compRows], { numFmts: SUPPLY_FMTS });
   const comps = [...cs.comps || []].sort((a, b) => new Date(b.comm_date || b.sign_date || 0) - new Date(a.comm_date || a.sign_date || 0)).map((c) => [c.tenant || "", c.owner || "", c.building_name || c.address || "", sub(c), num(c.leased_sf), num(c.start_rate), xlDate(c.comm_date), num(c.term)]);
-  addTableSheet(wb, "Comparable Comps", `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps);
+  addTableSheet(wb, "Comparable Comps", `Comparable Lease Comps${scope}`, CS_COMP_COLS, comps, { numFmts: CS_COMP_FMTS });
   return { supplyCount: subjectRows.length + compRows.length, compCount: comps.length };
 }
 async function reportBuffer(input) {
