@@ -1,0 +1,50 @@
+{
+  "name": "hpi-report-kit",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Shared HPI report rendering kit — competitive-set selection, chart aggregators + Recharts components, pptx deck, branded PDF, and Excel builders. Consumed by ftw-cre-platform and agency-hub so both build identical reports without code drift.",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "files": ["dist", "src"],
+  "exports": {
+    "./select": "./dist/select.js",
+    "./aggregate": "./dist/aggregate.js",
+    "./canon": "./dist/canon.js",
+    "./format": "./dist/format.js",
+    "./charts": "./dist/charts.js",
+    "./snapshot": "./dist/snapshot.js",
+    "./pptx": "./dist/pptx.js",
+    "./pdf": "./dist/pdf.js",
+    "./excel": "./dist/excel.js",
+    "./assets": "./dist/assets.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "recharts": "^3",
+    "pptxgenjs": "^4",
+    "jspdf": "^4",
+    "jspdf-autotable": "^5",
+    "html2canvas": "^1",
+    "exceljs": "^4.4"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "recharts": { "optional": true },
+    "pptxgenjs": { "optional": true },
+    "jspdf": { "optional": true },
+    "jspdf-autotable": { "optional": true },
+    "html2canvas": { "optional": true },
+    "exceljs": { "optional": true }
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.0"
+  }
+}

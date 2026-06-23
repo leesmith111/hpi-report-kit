@@ -1,0 +1,8 @@
+# NOTE: dist/ is intentionally NOT ignored — it is committed so consumer apps
+# (installed via `github:` git dependency) get the pre-built output with no
+# install-time build step on Vercel.
+node_modules/
+*.log
+.DS_Store
+.env
+.env.local
