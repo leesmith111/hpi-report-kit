@@ -49,6 +49,35 @@ function toCanonicalSubmarket(s) {
 // src/select.js
 var SUPPLY_STATUSES = ["Existing", "Under Construction"];
 var EARTH_MI = 3958.8;
+var FIRST_GEN_MAX_AGE_YEARS = 5;
+var NEW_DEV_MAX_AGE_YEARS = 2;
+function vintageYear(row) {
+  for (const v of [row?.quarter_delivered, row?.construction_year, row?.built_reno, row?.year_built, row?.year]) {
+    if (v == null || v === "") continue;
+    const m = String(v).match(/\d{4}/);
+    if (m) return Number(m[0]);
+  }
+  return null;
+}
+function isFirstGenBuilding(b, { now = /* @__PURE__ */ new Date() } = {}) {
+  if (b?.status === "Under Construction" || b?.status === "Proposed") return true;
+  if (b?.vacancy_type === "1st GEN") return true;
+  if (b?.vacancy_type === "2nd GEN") return false;
+  const yr = vintageYear(b);
+  if (yr == null) return false;
+  return yr >= now.getFullYear() - FIRST_GEN_MAX_AGE_YEARS;
+}
+function isNewDevelopment(subject, { now = /* @__PURE__ */ new Date() } = {}) {
+  if (subject?.status === "Under Construction" || subject?.status === "Proposed") return true;
+  const yr = vintageYear(subject);
+  return yr != null && yr >= now.getFullYear() - NEW_DEV_MAX_AGE_YEARS;
+}
+function isFirstGenComp(c, { now = /* @__PURE__ */ new Date() } = {}) {
+  if (c?.vacancy_type === "1st GEN") return true;
+  if (c?.vacancy_type === "2nd GEN") return false;
+  const yr = vintageYear(c);
+  return yr != null && yr >= now.getFullYear() - FIRST_GEN_MAX_AGE_YEARS;
+}
 function haversineMi(aLat, aLng, bLat, bLng) {
   const toRad = (d) => d * Math.PI / 180;
   const dLat = toRad(bLat - aLat);
@@ -66,7 +95,7 @@ function sizeBand(sf, bandPct) {
   const f = (Number(bandPct) || 0) / 100;
   return { min: Math.max(0, Math.round(s * (1 - f))), max: Math.round(s * (1 + f)) };
 }
-function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, excludeIds = [], canon = toCanonicalSubmarket } = {}) {
+function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, excludeIds = [], canon = toCanonicalSubmarket, firstGenOnly, now = /* @__PURE__ */ new Date() } = {}) {
   const sf = Number(subject?.total_sf) || 0;
   if (sf <= 0) return [];
   const { min, max } = sizeBand(sf, bandPct);
@@ -75,11 +104,13 @@ function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, exc
   const haveSubjectCoords = Number.isFinite(sLat) && Number.isFinite(sLng);
   const sub = canon(subject.submarket);
   const radius = Number(radiusMi) || 0;
+  const applyFirstGen = firstGenOnly ?? isNewDevelopment(subject, { now });
   return buildings.filter((b) => {
     if (exclude.has(b.id)) return false;
     if (!SUPPLY_STATUSES.includes(b.status)) return false;
     const offerable = b.status !== "Existing" || (Number(b.sf_available) || 0) > 0;
     if (!offerable) return false;
+    if (applyFirstGen && !isFirstGenBuilding(b, { now })) return false;
     const bsf = Number(b.total_sf) || 0;
     if (bsf < min || bsf > max) return false;
     if (haveSubjectCoords) {
@@ -96,7 +127,8 @@ function selectLeaseComps(subjects, comps, {
   radiusMi = 0,
   now = /* @__PURE__ */ new Date(),
   excludeIncomplete = true,
-  canon = toCanonicalSubmarket
+  canon = toCanonicalSubmarket,
+  firstGenOnly
 } = {}) {
   const subs = new Set(
     (subjects || []).map((s) => canon(s.submarket)).filter(Boolean)
@@ -116,8 +148,10 @@ function selectLeaseComps(subjects, comps, {
     cutoff.setMonth(cutoff.getMonth() - Number(months));
   }
   const inSubmarket = (c) => !subs.size || subs.has(canon(c.submarket));
+  const applyFirstGen = firstGenOnly ?? (subjects || []).some((s) => isNewDevelopment(s, { now }));
   return (comps || []).filter((c) => {
     if (excludeIncomplete && c.incomplete === true) return false;
+    if (applyFirstGen && !isFirstGenComp(c, { now })) return false;
     const sf = Number(c.leased_sf) || 0;
     if (sf <= 0 || sf < lo || sf > hi) return false;
     if (cutoff) {
@@ -161,7 +195,12 @@ function pickRepresentativeRate(building, ratesList) {
   };
 }
 export {
+  FIRST_GEN_MAX_AGE_YEARS,
+  NEW_DEV_MAX_AGE_YEARS,
   haversineMi,
+  isFirstGenBuilding,
+  isFirstGenComp,
+  isNewDevelopment,
   pickRepresentativeRate,
   selectCompetitors,
   selectLeaseComps,

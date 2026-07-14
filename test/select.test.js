@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { selectCompetitors, selectLeaseComps, pickRepresentativeRate, sizeBand, haversineMi } from '../src/select.js';
+import {
+  selectCompetitors, selectLeaseComps, pickRepresentativeRate, sizeBand, haversineMi,
+  isFirstGenBuilding, isNewDevelopment, isFirstGenComp,
+} from '../src/select.js';
 
 const SUBJECT = { id: 1, total_sf: 100000, status: 'Existing', sf_available: 20000, submarket: 'Alliance', latitude: 32.9, longitude: -97.3 };
 
@@ -68,6 +71,64 @@ test('selectLeaseComps: radiusMi filters by proximity, crossing submarket labels
   const out = selectLeaseComps([SUBJECT], comps, { bandPct: 35, months: 24, radiusMi: 5, now })
   assert.deepEqual(out.map(c => c.id).sort(), ['near', 'nocoord'])
 })
+
+// ---- First-generation / new-development filtering -------------------------
+const FG_NOW = new Date('2026-06-01T00:00:00Z'); // first-gen window ≥2021, new-dev ≥2024
+
+test('isFirstGenBuilding: tag wins, else 5-yr vintage, else excluded', () => {
+  assert.equal(isFirstGenBuilding({ status: 'Under Construction' }, { now: FG_NOW }), true);
+  assert.equal(isFirstGenBuilding({ status: 'Proposed' }, { now: FG_NOW }), true);
+  assert.equal(isFirstGenBuilding({ status: 'Existing', vacancy_type: '1st GEN', construction_year: 2005 }, { now: FG_NOW }), true); // tag beats old vintage
+  assert.equal(isFirstGenBuilding({ status: 'Existing', vacancy_type: '2nd GEN', construction_year: 2025 }, { now: FG_NOW }), false); // tag beats new vintage
+  assert.equal(isFirstGenBuilding({ status: 'Existing', quarter_delivered: '2023 Q2' }, { now: FG_NOW }), true); // untagged, within 5 yrs
+  assert.equal(isFirstGenBuilding({ status: 'Existing', construction_year: 2015 }, { now: FG_NOW }), false); // untagged, too old
+  assert.equal(isFirstGenBuilding({ status: 'Existing' }, { now: FG_NOW }), false); // no vintage, no tag → excluded
+});
+
+test('isNewDevelopment: UC/Proposed or delivered within 2 yrs', () => {
+  assert.equal(isNewDevelopment({ status: 'Proposed' }, { now: FG_NOW }), true);
+  assert.equal(isNewDevelopment({ status: 'Existing', construction_year: 2025 }, { now: FG_NOW }), true);
+  assert.equal(isNewDevelopment({ status: 'Existing', construction_year: 2023 }, { now: FG_NOW }), false); // 3 yrs → not the trigger
+  assert.equal(isNewDevelopment({ status: 'Existing' }, { now: FG_NOW }), false);
+});
+
+const FG_SUBJECT = { id: 100, total_sf: 100000, status: 'Proposed', submarket: 'Alliance', latitude: 32.9, longitude: -97.3 };
+const FG_BUILDINGS = [
+  FG_SUBJECT,
+  { id: 101, total_sf: 100000, status: 'Existing', sf_available: 20000, quarter_delivered: '2023 Q1', latitude: 32.9, longitude: -97.3 }, // ≤5yr → keep
+  { id: 102, total_sf: 100000, status: 'Existing', sf_available: 20000, construction_year: 2014, latitude: 32.9, longitude: -97.3 },       // old, untagged → drop
+  { id: 103, total_sf: 100000, status: 'Existing', sf_available: 20000, vacancy_type: '1st GEN', construction_year: 2009, latitude: 32.9, longitude: -97.3 }, // tag → keep
+  { id: 104, total_sf: 100000, status: 'Existing', sf_available: 20000, vacancy_type: '2nd GEN', construction_year: 2025, latitude: 32.9, longitude: -97.3 }, // tag → drop
+  { id: 105, total_sf: 100000, status: 'Under Construction', sf_available: 0, latitude: 32.9, longitude: -97.3 },                          // new supply → keep
+  { id: 106, total_sf: 100000, status: 'Existing', sf_available: 20000, latitude: 32.9, longitude: -97.3 },                                // no vintage/tag → drop
+];
+
+test('selectCompetitors: new-dev subject auto-filters to first-gen supply', () => {
+  const ids = selectCompetitors(FG_SUBJECT, FG_BUILDINGS, { bandPct: 35, radiusMi: 5, now: FG_NOW }).map(b => b.id).sort();
+  assert.deepEqual(ids, [101, 103, 105]); // 102 (old), 104 (2nd GEN), 106 (unknown) dropped
+});
+
+test('selectCompetitors: firstGenOnly:false opts a new-dev subject out', () => {
+  const ids = selectCompetitors(FG_SUBJECT, FG_BUILDINGS, { bandPct: 35, radiusMi: 5, now: FG_NOW, firstGenOnly: false }).map(b => b.id).sort();
+  assert.deepEqual(ids, [101, 102, 103, 104, 105, 106]); // every Existing-with-vacancy + UC returns
+});
+
+test('selectCompetitors: non-new-dev subject is unaffected (no filtering)', () => {
+  const oldSubject = { ...FG_SUBJECT, status: 'Existing', construction_year: 2005 };
+  const ids = selectCompetitors(oldSubject, FG_BUILDINGS, { bandPct: 35, radiusMi: 5, now: FG_NOW }).map(b => b.id).sort();
+  assert.deepEqual(ids, [101, 102, 103, 104, 105, 106]);
+});
+
+test('selectLeaseComps: new-dev subject keeps only first-gen comps', () => {
+  const comps = [
+    { id: 'fg', leased_sf: 95000, submarket: 'Alliance', comm_date: '2026-01-15', built_reno: '2024' }, // first-gen building → keep
+    { id: 'old', leased_sf: 95000, submarket: 'Alliance', comm_date: '2026-01-15', built_reno: '2012' }, // old building → drop
+    { id: 'novint', leased_sf: 95000, submarket: 'Alliance', comm_date: '2026-01-15' },                   // no vintage → drop
+  ];
+  const ids = selectLeaseComps([FG_SUBJECT], comps, { bandPct: 35, months: 24, now: FG_NOW }).map(c => c.id);
+  assert.deepEqual(ids, ['fg']);
+  assert.equal(isFirstGenComp(comps[1], { now: FG_NOW }), false);
+});
 
 test('pickRepresentativeRate prefers the largest fitting quote + reports range', () => {
   const b = { id: 1, sf_available: 50000 };

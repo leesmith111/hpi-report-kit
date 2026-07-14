@@ -22,6 +22,65 @@ const SUPPLY_STATUSES = ['Existing', 'Under Construction'];
 
 const EARTH_MI = 3958.8;
 
+// ---- First-generation / new-development classification --------------------
+// A competitive set built for a NEW DEVELOPMENT (proposed, under construction,
+// or just-delivered) must compare against first-generation product only —
+// competing new supply plus recently-delivered or explicitly-tagged 1st-GEN
+// space. A seasoned 2nd-generation building doesn't compete with something that
+// hasn't broken ground, so it's dropped from the seed (callers curate back).
+// New-dev competitive-set spec, 2026-07-14.
+//
+// These predicates are the SINGLE source of truth for the rule — FTW (decks),
+// agency-hub, and the pitch pipeline all import them so the definition never
+// forks. All windows are inclusive and measured in whole calendar years.
+
+// Untagged fallback: a building counts as first-gen if it delivered within this
+// many years. The explicit vacancy_type tag ('1st GEN' / '2nd GEN') always wins.
+export const FIRST_GEN_MAX_AGE_YEARS = 5;
+// A SUBJECT trips the first-gen filter when it's UC/Proposed or delivered within
+// this many years — deliberately tighter than the membership window, so a fresh
+// spec building is treated as a new development but still pulls comps back 5 yrs.
+export const NEW_DEV_MAX_AGE_YEARS = 2;
+
+// First 4-digit year from whichever vintage field a row carries: buildings use
+// quarter_delivered ("2023 Q2") then construction_year; hydrated comps carry
+// built_reno; agency/land rows use year_built / year. null when none parse.
+function vintageYear(row) {
+  for (const v of [row?.quarter_delivered, row?.construction_year, row?.built_reno, row?.year_built, row?.year]) {
+    if (v == null || v === '') continue;
+    const m = String(v).match(/\d{4}/);
+    if (m) return Number(m[0]);
+  }
+  return null;
+}
+
+// Building qualifies as first-generation competing supply for a new development.
+export function isFirstGenBuilding(b, { now = new Date() } = {}) {
+  if (b?.status === 'Under Construction' || b?.status === 'Proposed') return true; // competing new supply
+  if (b?.vacancy_type === '1st GEN') return true;   // explicit tag wins
+  if (b?.vacancy_type === '2nd GEN') return false;  // explicit tag wins
+  const yr = vintageYear(b);
+  if (yr == null) return false;                     // unverifiable vintage → exclude, curate back
+  return yr >= now.getFullYear() - FIRST_GEN_MAX_AGE_YEARS;
+}
+
+// Subject counts as a new development → turns the first-gen filter ON.
+export function isNewDevelopment(subject, { now = new Date() } = {}) {
+  if (subject?.status === 'Under Construction' || subject?.status === 'Proposed') return true;
+  const yr = vintageYear(subject);
+  return yr != null && yr >= now.getFullYear() - NEW_DEV_MAX_AGE_YEARS;
+}
+
+// Lease/sale comp is first-generation. Comps carry no vacancy_type tag of their
+// own, so this is vintage-only off the hydrated building year (built_reno);
+// unverifiable vintage → excluded (curate back).
+export function isFirstGenComp(c, { now = new Date() } = {}) {
+  if (c?.vacancy_type === '1st GEN') return true;
+  if (c?.vacancy_type === '2nd GEN') return false;
+  const yr = vintageYear(c);
+  return yr != null && yr >= now.getFullYear() - FIRST_GEN_MAX_AGE_YEARS;
+}
+
 // Great-circle distance in miles between two lat/lng points.
 export function haversineMi(aLat, aLng, bLat, bLng) {
   const toRad = d => (d * Math.PI) / 180;
@@ -51,7 +110,12 @@ export function sizeBand(sf, bandPct) {
 // band AND within radiusMi of the subject. Excludes the subject and any sibling
 // subjects (excludeIds). Proximity is primary; falls back to same-submarket when
 // the subject has no coordinates.
-export function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, excludeIds = [], canon = defaultCanon } = {}) {
+// `firstGenOnly` restricts the set to first-generation supply. Left undefined
+// (the default) it AUTO-enables whenever the subject is a new development, so a
+// competitive set for a Proposed/UC/just-delivered building drops seasoned
+// 2nd-gen product without the caller wiring anything. Pass `false` to force it
+// off (e.g. a value-add subject). `now` is injectable for deterministic tests.
+export function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi = 5, excludeIds = [], canon = defaultCanon, firstGenOnly, now = new Date() } = {}) {
   const sf = Number(subject?.total_sf) || 0;
   if (sf <= 0) return [];
   const { min, max } = sizeBand(sf, bandPct);
@@ -60,12 +124,16 @@ export function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi =
   const haveSubjectCoords = Number.isFinite(sLat) && Number.isFinite(sLng);
   const sub = canon(subject.submarket); // submarket fallback
   const radius = Number(radiusMi) || 0;
+  const applyFirstGen = firstGenOnly ?? isNewDevelopment(subject, { now });
   return buildings.filter(b => {
     if (exclude.has(b.id)) return false;
     if (!SUPPLY_STATUSES.includes(b.status)) return false;
     // Existing must have availability to be "competing"; UC is future supply.
     const offerable = b.status !== 'Existing' || (Number(b.sf_available) || 0) > 0;
     if (!offerable) return false;
+    // New-development sets: first-generation supply only (UC/Proposed, 1st-GEN
+    // tagged, or delivered within FIRST_GEN_MAX_AGE_YEARS).
+    if (applyFirstGen && !isFirstGenBuilding(b, { now })) return false;
     const bsf = Number(b.total_sf) || 0;
     if (bsf < min || bsf > max) return false;
     if (haveSubjectCoords) {
@@ -86,7 +154,7 @@ export function selectCompetitors(subject, buildings, { bandPct = 35, radiusMi =
 // legacy submarket-only filter, so existing callers are unchanged.
 // `now` is injectable so tests are deterministic.
 export function selectLeaseComps(subjects, comps, {
-  bandPct = 35, months = 24, radiusMi = 0, now = new Date(), excludeIncomplete = true, canon = defaultCanon,
+  bandPct = 35, months = 24, radiusMi = 0, now = new Date(), excludeIncomplete = true, canon = defaultCanon, firstGenOnly,
 } = {}) {
   const subs = new Set(
     (subjects || []).map(s => canon(s.submarket)).filter(Boolean),
@@ -112,8 +180,13 @@ export function selectLeaseComps(subjects, comps, {
 
   const inSubmarket = (c) => !subs.size || subs.has(canon(c.submarket));
 
+  // Auto-enable first-gen comp filtering when ANY subject is a new development,
+  // mirroring selectCompetitors; `firstGenOnly` overrides in either direction.
+  const applyFirstGen = firstGenOnly ?? (subjects || []).some(s => isNewDevelopment(s, { now }));
+
   return (comps || []).filter(c => {
     if (excludeIncomplete && c.incomplete === true) return false;
+    if (applyFirstGen && !isFirstGenComp(c, { now })) return false;
     const sf = Number(c.leased_sf) || 0;
     if (sf <= 0 || sf < lo || sf > hi) return false;
     if (cutoff) {
