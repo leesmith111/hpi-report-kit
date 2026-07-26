@@ -17,6 +17,7 @@ export default defineConfig({
     charts: 'src/charts.jsx',
     snapshot: 'src/snapshot.js',
     pptx: 'src/pptx.js',
+    pitch: 'src/pitch.js',
     pdf: 'src/pdf.js',
     excel: 'src/excel.js',
     assets: 'src/assets.js',

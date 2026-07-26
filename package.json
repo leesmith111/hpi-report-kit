@@ -1,6 +1,6 @@
 {
   "name": "hpi-report-kit",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "type": "module",
   "description": "Shared HPI report rendering kit — competitive-set selection, chart aggregators + Recharts components, pptx deck, branded PDF, and Excel builders. Consumed by ftw-cre-platform and agency-hub so both build identical reports without code drift.",
@@ -19,6 +19,7 @@
     "./charts": "./dist/charts.js",
     "./snapshot": "./dist/snapshot.js",
     "./pptx": "./dist/pptx.js",
+    "./pitch": "./dist/pitch.js",
     "./pdf": "./dist/pdf.js",
     "./excel": "./dist/excel.js",
     "./assets": "./dist/assets.js"
