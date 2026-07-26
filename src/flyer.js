@@ -244,6 +244,41 @@ export function addFlyerImagePage(deck, { theme, name, address, headerPhoto, foo
 }
 
 // ---------------------------------------------------------------------------
+// addFlyerNamesPage — SURROUNDING TENANTS / CORPORATE NEIGHBORS style page:
+// two-tone title, site aerial on top, and a branded chip wall of names below
+// (white rounded chips, accent border, auto column count, text shrinks to
+// fit). The automated stand-in for the hand-built logos-on-aerial pages —
+// names come from a CoStar / dashboard export.
+// ---------------------------------------------------------------------------
+export function addFlyerNamesPage(deck, { theme, name, address, headerPhoto, footer, title, image, names = [], columns, maxNames = 36 }) {
+  const T = theme;
+  const s = addFlyerPage(deck, { theme, name, address, headerPhoto, footer });
+  addSectionTitle(s, T, title[0], title[1], { y: 1.92 });
+  const list = names.slice(0, maxNames);
+  const n = list.length;
+  const cols = columns || (n <= 8 ? 2 : n <= 18 ? 3 : 4);
+  const rows = Math.ceil(n / cols) || 0;
+  const chipH = n <= 18 ? 0.34 : 0.28;
+  const gapY = 0.10, gapX = 0.14;
+  const wallH = rows ? rows * (chipH + gapY) : 0;
+  const imgTop = 2.42;
+  const imgH = Math.max(2.0, T.FOOTER_Y - 0.35 - wallH - 0.22 - imgTop);
+  img(s, image, 0.32, imgTop, FLYER_W - 0.64, imgH);
+  const wallTop = imgTop + imgH + 0.22;
+  const chipW = (FLYER_W - 2 * 0.32 - gapX * (cols - 1)) / cols;
+  list.forEach((nm, i) => {
+    const r = Math.floor(i / cols), c = i % cols;
+    s.addText(String(nm), {
+      x: 0.32 + c * (chipW + gapX), y: wallTop + r * (chipH + gapY), w: chipW, h: chipH,
+      shape: 'roundRect', rectRadius: 0.06, fill: { color: T.WHITE }, line: { color: T.ACCENT, width: 1 },
+      fontFace: T.FONT, fontSize: n <= 18 ? 9.5 : 8.5, bold: true, color: T.INK,
+      align: 'center', valign: 'middle', margin: [2, 4, 2, 4], wrap: false, fit: 'shrink',
+    });
+  });
+  return s;
+}
+
+// ---------------------------------------------------------------------------
 // addFlyerDisclosurePage — full-page contained image (the TREC IABS form or any
 // required legal back page). No chrome.
 // ---------------------------------------------------------------------------

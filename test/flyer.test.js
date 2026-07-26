@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   flyerTheme, splitSpecs, addFlyerFooter, addFlyerPage, addFlyerCover,
-  addFlyerSpecsPage, addFlyerImagePage, addFlyerDisclosurePage, FLYER_W, FLYER_H,
+  addFlyerSpecsPage, addFlyerImagePage, addFlyerNamesPage, addFlyerDisclosurePage, FLYER_W, FLYER_H,
 } from '../src/flyer.js';
 
 test('flyerTheme: defaults + per-property override', () => {
@@ -126,6 +126,29 @@ test('addFlyerImagePage: title, hyperlinked CTA chip, bullet overlay card', () =
   // overlay card = accent rect near the footer
   assert.ok(s.shapes.some(sh => sh.opts.fill?.color === T.ACCENT && sh.opts.y > 6));
 });
+
+test('addFlyerNamesPage: aerial + chip wall, auto columns, cap, shrink-fit', () => {
+  const deck = stubDeck()
+  const names = Array.from({ length: 20 }, (_, i) => `Tenant ${i + 1}`)
+  const s = addFlyerNamesPage(deck, { ...CHROME, title: ['Surrounding', 'Tenants'], image: 'data:image/png;base64,a', names })
+  const all = flat(s)
+  assert.match(all, /SURROUNDING TENANTS/)
+  assert.match(all, /Tenant 20/)
+  const chips = s.texts.filter(t => t.opts?.shape === 'roundRect')
+  assert.equal(chips.length, 20)
+  // 20 names -> 4 columns, accent-bordered white chips, shrink-to-fit
+  const xs = new Set(chips.map(c => Math.round(c.opts.x * 100)))
+  assert.equal(xs.size, 4)
+  assert.equal(chips[0].opts.line.color, T.ACCENT)
+  assert.equal(chips[0].opts.fit, 'shrink')
+  // aerial shrinks to leave room for 5 chip rows, but never below 2.0
+  const aerial = s.images.find(i => i.y === 2.42)
+  assert.ok(aerial && aerial.h >= 2.0)
+  // cap at maxNames
+  const deck2 = stubDeck()
+  const s2 = addFlyerNamesPage(deck2, { ...CHROME, title: ['Corporate', 'Neighbors'], names: Array.from({ length: 50 }, (_, i) => `N${i}`) })
+  assert.equal(s2.texts.filter(t => t.opts?.shape === 'roundRect').length, 36)
+})
 
 test('addFlyerDisclosurePage: full-page contained image, no chrome', () => {
   const deck = stubDeck();
