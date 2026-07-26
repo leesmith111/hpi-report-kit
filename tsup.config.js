@@ -18,6 +18,7 @@ export default defineConfig({
     snapshot: 'src/snapshot.js',
     pptx: 'src/pptx.js',
     pitch: 'src/pitch.js',
+    flyer: 'src/flyer.js',
     pdf: 'src/pdf.js',
     excel: 'src/excel.js',
     assets: 'src/assets.js',
