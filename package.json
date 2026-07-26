@@ -29,14 +29,14 @@
     "test": "node --test"
   },
   "peerDependencies": {
-    "react": "^18 || ^19",
-    "react-dom": "^18 || ^19",
-    "recharts": "^3",
-    "pptxgenjs": "^4",
+    "exceljs": "^4.4",
+    "html2canvas": "^1",
     "jspdf": "^4",
     "jspdf-autotable": "^5",
-    "html2canvas": "^1",
-    "exceljs": "^4.4"
+    "pptxgenjs": "^4",
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "recharts": "^3"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -65,6 +65,7 @@
     }
   },
   "devDependencies": {
+    "pptxgenjs": "^4.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.7.0"
   }
