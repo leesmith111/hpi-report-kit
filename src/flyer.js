@@ -8,6 +8,8 @@
 // module (fixed navy/gold), the flyer theme is PARAMETERIZED — each property
 // carries its own accent color + fonts via flyerTheme({ ... }).
 
+import { PLACEHOLDER_PHOTO, PLACEHOLDER_BAND } from './placeholders.js';
+
 export const FLYER_W = 8.5;
 export const FLYER_H = 11;
 
@@ -68,9 +70,9 @@ export function addSectionTitle(slide, T, boldWord, lightWord, { x = 0.6, y, siz
 }
 
 // Contained image helper.
-function img(slide, data, x, y, w, h) {
+function img(slide, data, x, y, w, h, altText) {
   if (!data) return;
-  slide.addImage({ data, x, y, w, h, sizing: { type: 'contain', w, h } });
+  slide.addImage({ data, x, y, w, h, sizing: { type: 'contain', w, h }, ...(altText ? { altText } : {}) });
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +134,9 @@ export function addFlyerPage(deck, { theme, name, address, headerPhoto, footer }
   const T = theme;
   const s = deck.addSlide();
   s.background = { color: T.WHITE };
-  if (headerPhoto) {
-    s.addImage({ data: headerPhoto, x: 0, y: 0, w: FLYER_W, h: T.HEADER_H, sizing: { type: 'cover', w: FLYER_W, h: T.HEADER_H } });
-  } else {
-    rect(s, 0, 0, FLYER_W, T.HEADER_H, T.LIGHT);
-  }
+  // Always a real picture (placeholder when empty) so right-click → Change
+  // Picture works and keeps the chip/address overlays above it.
+  s.addImage({ data: headerPhoto || PLACEHOLDER_BAND, x: 0, y: 0, w: FLYER_W, h: T.HEADER_H, sizing: { type: 'cover', w: FLYER_W, h: T.HEADER_H }, altText: 'Header photo — right-click > Change Picture to swap' });
   nameChip(s, T, name, { x: 0.32, y: 0.26, w: 1.95, h: 1.0 });
   if (address) addressBar(s, T, address, { x: 2.62, y: 0.26, w: 5.55 });
   if (footer) addFlyerFooter(s, T, footer);
@@ -152,8 +152,9 @@ export function addFlyerCover(deck, { theme, name, address, photo, saleLine = 'F
   const s = deck.addSlide();
   s.background = { color: T.WHITE };
   const photoH = 6.15;
-  if (photo) s.addImage({ data: photo, x: 0, y: 0, w: FLYER_W, h: photoH, sizing: { type: 'cover', w: FLYER_W, h: photoH } });
-  else rect(s, 0, 0, FLYER_W, photoH, T.LIGHT);
+  // Always a real picture (placeholder when empty) so right-click → Change
+  // Picture works and keeps the name chip / banner / address bar above it.
+  s.addImage({ data: photo || PLACEHOLDER_PHOTO, x: 0, y: 0, w: FLYER_W, h: photoH, sizing: { type: 'cover', w: FLYER_W, h: photoH }, altText: 'Cover photo — right-click > Change Picture to swap' });
   nameChip(s, T, name, { x: 0.30, y: 0.34, w: 2.55, h: 1.35, size: 17 });
   // FOR LEASE banner: gold-standard house look = accent-edged white text over the photo
   rect(s, 0.42, 4.92, 0.07, 1.0, T.ACCENT);
@@ -164,7 +165,7 @@ export function addFlyerCover(deck, { theme, name, address, photo, saleLine = 'F
   features.slice(0, 8).forEach((f, i) => {
     slide_bullet(s, T, f, 0.66, 7.08 + i * 0.36, 3.85);
   });
-  img(s, locatorImage, 4.65, 6.55, 3.3, 3.15);
+  img(s, locatorImage, 4.65, 6.55, 3.3, 3.15, 'Locator map — right-click > Change Picture to swap');
   if (footer) addFlyerFooter(s, T, footer);
   return s;
 }
@@ -207,7 +208,7 @@ export function addFlyerSpecsPage(deck, { theme, name, address, headerPhoto, foo
   const maxRows = Math.max(left.length, right.length)
   const photoTop = top + maxRows * 0.45 + 0.25
   if (photo) {
-    s.addImage({ data: photo, x: 0, y: Math.min(photoTop, 6.4), w: FLYER_W, h: T.FOOTER_Y - 0.25 - Math.min(photoTop, 6.4), sizing: { type: 'cover', w: FLYER_W, h: T.FOOTER_Y - 0.25 - Math.min(photoTop, 6.4) } })
+    s.addImage({ data: photo, x: 0, y: Math.min(photoTop, 6.4), w: FLYER_W, h: T.FOOTER_Y - 0.25 - Math.min(photoTop, 6.4), sizing: { type: 'cover', w: FLYER_W, h: T.FOOTER_Y - 0.25 - Math.min(photoTop, 6.4) }, altText: 'Overview photo — right-click > Change Picture to swap' })
   }
   return s;
 }
@@ -228,7 +229,7 @@ export function addFlyerImagePage(deck, { theme, name, address, headerPhoto, foo
       ...(cta.url ? { hyperlink: { url: cta.url } } : {}),
     });
   }
-  img(s, image, 0.32, 2.5, FLYER_W - 0.64, T.FOOTER_Y - 0.3 - 2.5);
+  img(s, image, 0.32, 2.5, FLYER_W - 0.64, T.FOOTER_Y - 0.3 - 2.5, `${[title].flat().filter(Boolean).join(' ')} image — right-click > Change Picture to swap`);
   if (bullets.length) {
     const bh = Math.min(0.34 * bullets.length + 0.24, 3.2);
     const by = T.FOOTER_Y - 0.45 - bh;
